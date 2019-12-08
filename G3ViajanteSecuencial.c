@@ -9,6 +9,7 @@
 #define true 1
 #define false 0
 #define StartNode 0
+#define InitialQueueBlock 2
 
 typedef struct{
     int* pobl;
@@ -18,30 +19,37 @@ typedef struct{
 typedef tour_struct *tour_t;
 
 typedef struct{
-    tour_t *list;
-    int list_sz;
-}stack_struct;
-typedef stack_struct *my_stack_t;
+    tour_t tour;
+    struct queue_struct_element *next;
+}queue_struct_element;
+
+typedef struct{
+    int n_elements;
+    queue_struct_element *first_element;
+    queue_struct_element *last_element;
+}queue_struct;
+typedef queue_struct *my_queue_t;
 
 int N_CITIES;
-int StackSize;  
 int *digraph;
 
 tour_t best;
 tour_t tour;
-my_stack_t pila;
+my_queue_t queue;
 
 //Definiciones de funciones usadas
-tour_t pop(my_stack_t pila);
-void push(my_stack_t pila, tour_t tour);
+tour_t pop(my_queue_t queue);
+void push(my_queue_t queue, tour_t tour);
 
 void printBest();
-void best_tour(tour_t tour);
+void bestTour(tour_t tour);
 
 int estaEnElRecorrido(tour_t tour, int pob);
-tour_t anadir_pob(tour_t tour, int pob);
+int containsTour(tour_t tourQueue, tour_t newTour);
+int checkTourViability(tour_t tour, my_queue_t queue);
+tour_t anadirPoblacion(tour_t tour, int pob);
 
-void Rec_en_profund(my_stack_t pila);
+void recorrerEnAnchura(my_queue_t queue);
 
 void freeTour(tour_t tour);
 
@@ -58,8 +66,6 @@ int main(int argc, char *argv[]){
     //Leer de diagraph_file el número de poblaciones, n; 
     fscanf(diagraph_file,"%d", &N_CITIES);
     printf("Numero de ciudades: %d\n\n", N_CITIES);
-
-    StackSize=(N_CITIES*((N_CITIES-3)/2))+2;
 
     //Reservar espacio para diagraph;
     digraph=(int*) malloc(sizeof(int)*N_CITIES*N_CITIES);
@@ -80,8 +86,7 @@ int main(int argc, char *argv[]){
     //Inicializar tour y besttour;
     tour=(tour_t) malloc(sizeof(tour_struct));
     best=(tour_t) malloc(sizeof(tour_struct));
-    pila=(my_stack_t) malloc(sizeof(stack_struct));
-    pila->list=(tour_t*) malloc(sizeof(tour_t)*StackSize);
+    queue=(my_queue_t) malloc(sizeof(queue_struct));
 
     tour->pobl=(int *) malloc(sizeof(int));
     tour->pobl[0]=StartNode;
@@ -92,11 +97,11 @@ int main(int argc, char *argv[]){
     best->contador=-1;
     best->pobl=(int *) malloc(sizeof(int));
 
-    pila->list[0]=tour;
-    pila->list_sz=1;
-
+    queue->n_elements=0;
+    push(queue,tour);
+    
     GET_TIME(inicio);
-    Rec_en_profund(pila);
+    recorrerEnAnchura(queue);
     GET_TIME(fin);
 
     //Imprimir resultados: besttour, coste y tiempo
@@ -109,54 +114,51 @@ int main(int argc, char *argv[]){
     printBest();
 
     //Liberar memoria dinámica asignada
-    free(pila->list);
-    free(pila);
+    free(queue);
     freeTour(best);
 }
 
-tour_t pop(my_stack_t pila)
+tour_t pop(my_queue_t queue)
 {
-    tour_t tourPoped=NULL;
     tour_t tour=NULL;
+    queue_struct_element *element;
 
-    if(pila->list_sz>0)
+    if(queue->n_elements > 0)
     {
-        pila->list_sz--;
-        tour=pila->list[pila->list_sz];
+        element=queue->first_element;
+        tour=element->tour;
+        queue->first_element=element->next;
 
-        tourPoped=(tour_t) malloc(sizeof(tour_struct));
-        tourPoped->pobl=(int *) malloc(sizeof(int)*tour->contador);
+        queue->n_elements--;
 
-        tourPoped->contador=tour->contador;
-        tourPoped->coste=tour->coste;
-        memcpy(tourPoped->pobl,tour->pobl,sizeof(int)*tour->contador);
-
-        freeTour(tour);
-        
-        /*if(pila->list_sz>0 && (pila->list=(tour_t*) realloc(pila->list,sizeof(tour_t)*pila->list_sz))==NULL)
-        {
-            fprintf(stderr,"Error realocando memoria de la pila (pop), tamaño: %d\n",pila->list_sz);
-            exit(EXIT_FAILURE);
-        }*/
+        free(element);
     }
-    return tourPoped;
+    return tour;
 }
 
-void push(my_stack_t pila, tour_t tour)
+void push(my_queue_t queue, tour_t tour)
 {
-    
-    //printf("%d\n",pila->list_sz*sizeof(tour_t));
-    /*if((pila->list=(tour_t*) realloc(pila->list,pila->list_sz*sizeof(tour_t)))==NULL)
-    {
-        fprintf(stderr,"Error realocando memoria de la pila (push), tamaño: %d\n",pila->list_sz);
-        exit(EXIT_FAILURE);
-    }*/
+    //printf("%d\n",queue->n_elements);
+    queue_struct_element *element;
+    element=(queue_struct_element*) malloc(sizeof(queue_struct_element));
+    element->tour=tour;
+    element->next=NULL;
 
-    pila->list[pila->list_sz]=tour;
-    pila->list_sz++;
+    if(queue->n_elements>0)
+    {
+        queue->last_element->next=element;
+        queue->last_element=element;
+    }
+    else
+    {
+        queue->first_element=element;
+        queue->last_element=element;
+    }
+    
+    queue->n_elements++;
 }
 
-tour_t anadir_pob(tour_t tour, int pob)
+tour_t anadirPoblacion(tour_t tour, int pob)
 {
     int poblation_offset=(tour->pobl[tour->contador-1]*N_CITIES)+pob;
 
@@ -173,11 +175,11 @@ tour_t anadir_pob(tour_t tour, int pob)
     return newTour;
 }
 
-void best_tour(tour_t tour){
+void bestTour(tour_t tour){
     if(tour->coste<best->coste){
         freeTour(best);
         best=tour;
-        printf("New best:\n");
+        printf("New best found:\n");
         printBest();
     }
     else
@@ -195,23 +197,24 @@ void printBest()
     printf("%d\n",best->pobl[best->contador-1]);
     printf("Coste: %d\n\n",best->coste);
 }
-void Rec_en_profund(my_stack_t pila)
+
+void recorrerEnAnchura(my_queue_t queue)
 {
     tour_t tour;
     tour_t nuevo_tour;
-    while(pila->list_sz>0)
+    while(queue->n_elements>0)
     {
-        tour=pop(pila);
+        tour=pop(queue);
         if(tour->contador==N_CITIES)
         {
             int pobOffset=(tour->pobl[tour->contador-1]*N_CITIES)+StartNode;
 
             if(digraph[pobOffset]>0)
             {
-                tour_t checkTour=anadir_pob(tour,StartNode);
+                tour_t checkTour=anadirPoblacion(tour,StartNode);
                 freeTour(tour);
                 tour=checkTour;
-                best_tour(tour);
+                bestTour(tour);
             }
         }
         else
@@ -221,8 +224,13 @@ void Rec_en_profund(my_stack_t pila)
             {
                 if((digraph[(i*N_CITIES)+pobId]>0)&&(estaEnElRecorrido(tour,pobId)==false))
                 {
-                    nuevo_tour=anadir_pob(tour,pobId);
-                    push(pila,nuevo_tour);
+                    nuevo_tour=anadirPoblacion(tour,pobId);
+
+                    if(checkTourViability(nuevo_tour,queue)==true)
+                        push(queue,nuevo_tour);
+                    else
+                        freeTour(nuevo_tour);
+                    
                 }
             }
             freeTour(tour);
@@ -238,6 +246,58 @@ int estaEnElRecorrido(tour_t tour, int pob)
     }
 
     return false;
+}
+
+int checkTourViability(tour_t tour, my_queue_t queue)
+{
+    int viable=true;
+    queue_struct_element *element;
+
+    if(queue->n_elements>0)
+    {
+        element=queue->first_element;
+        do
+        {
+            if(containsTour(element->tour,tour)==true)
+            {
+                if(element->tour->coste<tour->coste)
+                {
+                    viable=false;
+                    break;
+                }  
+            }
+
+            element=element->next;
+        } while (element!=NULL);
+        
+    }
+
+    return viable;
+}
+
+int containsTour(tour_t tourQueue, tour_t newTour)
+{
+    int included=true;
+
+    for(int i=0;i<newTour->contador;i++)
+    {
+        int aux=false;
+        for(int j=0; j<tourQueue->contador; j++)
+        {
+            if(newTour->pobl[i]==tourQueue->pobl[j])
+            {
+                aux=true;
+                break;
+            }
+        }
+        if(aux==false)
+        {
+            included=false;
+            break;
+        }
+    }
+
+    return included;
 }
 
 void freeTour(tour_t tour)
