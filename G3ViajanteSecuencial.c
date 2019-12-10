@@ -188,7 +188,6 @@ void Rec_en_profund(my_stack_t pila)
             if(digraph[pobOffset]>0)
             {
                 tour_t checkTour=anadir_pob(tour,StartNode);
-                freeTour(tour);
                 best_tour(checkTour);
             }
         }
@@ -210,8 +209,8 @@ void Rec_en_profund(my_stack_t pila)
                     }
                 }
             }
-            freeTour(tour);
         }
+        freeTour(tour);
     }
 }
 
